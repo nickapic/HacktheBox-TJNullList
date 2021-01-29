@@ -7,3 +7,4 @@ Hey, This is a write up of boxes in the TJNull OSCP Preperation list i will upda
 3. Valentine
 4. Shocker
 5. Sense
+6. Bank

