@@ -8,3 +8,8 @@ Hey, This is a write up of boxes in the TJNull OSCP Preperation list i will upda
 4. Shocker
 5. Sense
 6. Bank
+7. Bounty
+8. Frolic
+9. Writeup
+10. Irked
+11. Postman
